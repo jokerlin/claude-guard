@@ -21,6 +21,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zsh
       - run: zsh --version
       - name: Syntax check
-        run: zsh -n claude-guard.plugin.zsh && zsh -n tests/run.zsh
+        run: zsh -n claude-guard.plugin.zsh && zsh -n claude-guard-hook.zsh && zsh -n tests/run.zsh
       - name: Tests
         run: zsh tests/run.zsh

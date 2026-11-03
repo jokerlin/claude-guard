@@ -8,6 +8,8 @@
 : ${CLAUDE_GUARD_ALLOWLIST:=${XDG_CONFIG_HOME:-$HOME/.config}/claude-guard/allowed-ips}
 : ${CLAUDE_GUARD_TRACE_URL:=https://claude.ai/cdn-cgi/trace}
 : ${CLAUDE_GUARD_TIMEOUT:=10}
+# The prompt hook reuses a passed check for this many seconds (0 = check every prompt).
+: ${CLAUDE_GUARD_HOOK_TTL:=60}
 # Where the y/N/a answer is read from. Tests point it at a file.
 : ${CLAUDE_GUARD_TTY:=/dev/tty}
 
@@ -55,13 +57,88 @@ _claude_guard_allowed() {
   [[ -n $1 ]] && _claude_guard_entries | grep -qxF -- "$1"
 }
 
-# Returns 0 when claude may start. On a mismatch, asks:
-#   y = start anyway, a = add this IP to the allowlist and start, anything else = abort.
+# ---- cache of the last passed check, shared by the wrapper and the prompt hook ----
+# One line: <epoch seconds> <ip> <checksum of the proxy variables>.
+# The checksum keeps a session started with other proxy settings from reusing
+# the entry, without writing a proxy password to disk.
+_claude_guard_cache_file() {
+  print -r -- "${XDG_CACHE_HOME:-$HOME/.cache}/claude-guard/last-ok"
+}
+
+_claude_guard_proxy_key() {
+  print -r -- "${https_proxy-}|${HTTPS_PROXY-}|${all_proxy-}|${ALL_PROXY-}" | cksum | cut -d' ' -f1
+}
+
+_claude_guard_mark_ok() {
+  local file=$(_claude_guard_cache_file)
+  zmodload -F zsh/datetime p:EPOCHSECONDS 2>/dev/null
+  mkdir -p -- "${file:h}" 2>/dev/null &&
+    ( umask 077; print -r -- "$EPOCHSECONDS $1 $(_claude_guard_proxy_key)" > "$file.$$" &&
+      mv -f -- "$file.$$" "$file" ) 2>/dev/null
+  return 0
+}
+
+# True when a check passed less than CLAUDE_GUARD_HOOK_TTL seconds ago, with the
+# same proxy variables, for an IP that is still on the allowlist.
+_claude_guard_recent_ok() {
+  local file=$(_claude_guard_cache_file) t ip key
+  (( CLAUDE_GUARD_HOOK_TTL > 0 )) && [[ -r $file ]] || return 1
+  read -r t ip key < "$file" || return 1
+  zmodload -F zsh/datetime p:EPOCHSECONDS 2>/dev/null
+  [[ $t == <-> ]] && (( EPOCHSECONDS - t < CLAUDE_GUARD_HOOK_TTL )) &&
+    [[ $key == $(_claude_guard_proxy_key) ]] && _claude_guard_allowed "$ip"
+}
+
+# ---- Claude Code UserPromptSubmit hook (see claude-guard-hook.zsh) ----
+# Exit 0 lets the prompt through. Exit 2 blocks it; Claude Code shows stderr.
+_claude_guard_hook() {
+  [[ -n $CLAUDE_GUARD_SKIP ]] && return 0
+  _claude_guard_recent_ok && return 0
+
+  local ip=$(_claude_guard_exit_ip) entries proxy file_shown cmd
+  if _claude_guard_allowed "$ip"; then
+    _claude_guard_mark_ok "$ip"
+    return 0
+  fi
+
+  if [[ -z $ip ]]; then
+    proxy=$(_claude_guard_proxy)
+    _claude_guard_say \
+      "claude-guard: 无法访问 $CLAUDE_GUARD_TRACE_URL（${proxy:-未设置代理变量}），这条 prompt 没有发送。
+修好代理后重新发送。" \
+      "claude-guard: cannot reach $CLAUDE_GUARD_TRACE_URL (${proxy:-no proxy variable set}). The prompt was not sent.
+Fix the proxy, then send the prompt again."
+    return 2
+  fi
+
+  entries=$(_claude_guard_entries | paste -sd ' ' -)
+  # A command the user can paste, also with the ! prefix inside Claude Code.
+  file_shown=${(D)CLAUDE_GUARD_ALLOWLIST}
+  [[ $file_shown == *[[:space:]\'\"\$\`\\]* ]] && file_shown=${(q-)CLAUDE_GUARD_ALLOWLIST}
+  cmd="echo $ip >> $file_shown"
+  [[ -d ${CLAUDE_GUARD_ALLOWLIST:h} ]] || cmd="mkdir -p ${file_shown:h} && $cmd"
+  _claude_guard_say \
+    "claude-guard: 出口 IP $ip 不在白名单（${entries:-空}），这条 prompt 没有发送。
+修好代理后重新发送；或者把这个 IP 加入白名单：
+  $cmd" \
+    "claude-guard: egress IP $ip is not in the allowlist (${entries:-empty}). The prompt was not sent.
+Fix the proxy and send the prompt again, or allow this IP:
+  $cmd"
+  return 2
+}
+
+# Returns 0 when claude may start, 3 when the user chose to start anyway
+# (the session then runs with CLAUDE_GUARD_SKIP=1), 1 to abort.
+# On a mismatch, asks: y = start anyway, a = add this IP to the allowlist and start,
+# anything else = abort.
 _claude_guard_check() {
   local ip reply prompt entries
   ip=$(_claude_guard_exit_ip)
 
-  _claude_guard_allowed "$ip" && return 0
+  if _claude_guard_allowed "$ip"; then
+    _claude_guard_mark_ok "$ip"
+    return 0
+  fi
 
   if [[ -z $ip ]]; then
     local proxy=$(_claude_guard_proxy)
@@ -103,13 +180,14 @@ _claude_guard_check() {
   print -u2 ""
 
   case $reply in
-    [yY]) return 0 ;;
+    [yY]) return 3 ;;
     [aA])
       [[ -n $ip ]] || return 1
       mkdir -p -- "${CLAUDE_GUARD_ALLOWLIST:h}" &&
         print -r -- "$ip" >> "$CLAUDE_GUARD_ALLOWLIST" || return 1
       _claude_guard_say "✅ 已把 $ip 加入 ${(D)CLAUDE_GUARD_ALLOWLIST}" \
         "✅ added $ip to ${(D)CLAUDE_GUARD_ALLOWLIST}"
+      _claude_guard_mark_ok "$ip"
       return 0 ;;
     *) return 1 ;;
   esac
@@ -201,6 +279,11 @@ function claude {
   if (( ! $+functions[_claude_guard_check] )); then
     command claude "$@"; return
   fi
-  _claude_guard_check || return 1
-  command claude "$@"
+  _claude_guard_check
+  case $? in
+    0) command claude "$@" ;;
+    # "Start anyway": the prompt hook would block every prompt, so skip it too.
+    3) CLAUDE_GUARD_SKIP=1 command claude "$@" ;;
+    *) return 1 ;;
+  esac
 }

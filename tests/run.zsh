@@ -19,7 +19,7 @@ EOF
 cat > "$WORK/bin/claude" <<'EOF'
 #!/bin/sh
 if [ -t 0 ]; then in=; else read -r in || true; fi
-echo "claude-ran args=[$*] stdin=[$in]"
+echo "claude-ran args=[$*] stdin=[$in] skip=[${CLAUDE_GUARD_SKIP-}]"
 EOF
 chmod +x "$WORK/bin/curl" "$WORK/bin/claude"
 
@@ -140,6 +140,48 @@ run "claude-guard without arguments shows usage" 0 "usage: claude-guard status*"
 run "claude-guard unknown subcommand: exit 2" 2 "usage: claude-guard status*" 'claude-guard bogus'
 run "claude-guard in a function snapshot: exit 2" 2 "*helper functions are not loaded*" \
   'unfunction -m "_claude_guard_*"; claude-guard status'
+
+# --- prompt hook (claude-guard-hook.zsh)
+HOOK="zsh '$ROOT/claude-guard-hook.zsh' <<< '{\"prompt\":\"hi\"}'"
+CACHE="$WORK/home/.cache/claude-guard/last-ok"
+reset_state
+echo 203.0.113.7 > "$WORK/allow"
+FAKE_IP=203.0.113.7 run "hook: allowed IP passes silently" 0 "" "$HOOK"
+[[ $(cut -d' ' -f2 "$CACHE") == 203.0.113.7 ]] &&
+  { (( pass += 1 )); print "ok   hook: pass writes the cache"; } ||
+  { (( fail += 1 )); print "FAIL hook: pass writes the cache"; }
+FAKE_IP= run "hook: recent pass is reused (no request)" 0 "" "$HOOK"
+FAKE_IP= run "hook: TTL 0 always checks" 2 "*cannot reach*The prompt was not sent*" "CLAUDE_GUARD_HOOK_TTL=0 $HOOK"
+FAKE_IP= run "hook: other proxy variables do not reuse the cache" 2 "*cannot reach*https_proxy=http://127.0.0.1:1*" \
+  "https_proxy=http://127.0.0.1:1 $HOOK"
+FAKE_IP= run "hook: expired cache is not reused" 2 "*cannot reach*" \
+  "print -r -- \"1 203.0.113.7 \$(_claude_guard_proxy_key)\" > '$CACHE'; $HOOK"
+FAKE_IP= run "hook: cached IP no longer allowed is not reused" 2 "*cannot reach*" \
+  "zmodload zsh/datetime; print -r -- \"\$EPOCHSECONDS 192.0.2.50 \$(_claude_guard_proxy_key)\" > '$CACHE'; $HOOK"
+rm -f "$CACHE"
+FAKE_IP=192.0.2.9 run "hook: unknown IP blocks with a fix command" 2 \
+  "*egress IP 192.0.2.9 is not in the allowlist \\(203.0.113.7\\). The prompt was not sent.*echo 192.0.2.9 >> */allow" "$HOOK"
+FAKE_IP=192.0.2.9 run "hook: Chinese message" 2 "*出口 IP 192.0.2.9 不在白名单*这条 prompt 没有发送*" "CLAUDE_GUARD_LANG=zh $HOOK"
+FAKE_IP=192.0.2.9 run "hook: missing allowlist dir gets mkdir in the command" 2 \
+  "*mkdir -p ~/.config/claude-guard && echo 192.0.2.9 >> ~/.config/claude-guard/allowed-ips" \
+  "CLAUDE_GUARD_ALLOWLIST='$WORK/home/.config/claude-guard/allowed-ips' $HOOK"
+FAKE_IP=192.0.2.9 run "hook: CLAUDE_GUARD_SKIP lets the prompt through" 0 "" "CLAUDE_GUARD_SKIP=1 $HOOK"
+FAKE_IP=203.0.113.7 run "hook: cache does not store the proxy password" 0 "" \
+  "https_proxy=http://user:secret@127.0.0.1:7890 $HOOK; ! grep -q secret '$CACHE'"
+FAKE_IP= run "hook: unreachable hides the proxy password" 2 "*https_proxy=http://\*\*\*@127.0.0.1:1*" \
+  "out=\$(https_proxy=http://u:secret@127.0.0.1:1 CLAUDE_GUARD_HOOK_TTL=0 $HOOK 2>&1); rc=\$?; [[ \$out != *secret* ]] && print -r -- \$out; return \$rc"
+
+# --- wrapper and hook together
+reset_state
+echo 203.0.113.7 > "$WORK/allow"
+FAKE_IP=203.0.113.7 run "wrapper pass writes the cache for the first prompt" 0 "claude-ran*" \
+  "claude && FAKE_IP= $HOOK"
+print -n y > "$WORK/tty"
+FAKE_IP=192.0.2.9 run "answer y starts claude with CLAUDE_GUARD_SKIP=1" 0 "*claude-ran*skip=\[1\]*" 'claude'
+FAKE_IP=192.0.2.9 run "answer y does not write the cache" 0 "*claude-ran*" "rm -f '$CACHE'; claude; [[ ! -e '$CACHE' ]]"
+print -n a > "$WORK/tty"
+FAKE_IP=192.0.2.9 run "answer a writes the cache" 0 "*claude-ran*skip=\[\]*" "claude && [[ \$(cut -d' ' -f2 '$CACHE') == 192.0.2.9 ]]"
+rm -f "$WORK/tty"
 
 print -r -- "---"
 print -r -- "$pass passed, $fail failed"
