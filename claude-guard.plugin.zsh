@@ -57,8 +57,8 @@ _claude_guard_check() {
     entries=$(_claude_guard_entries | paste -sd ' ' -)
     if [[ -z $entries ]]; then
       _claude_guard_say \
-        "🚫 claude-guard: 白名单为空（$CLAUDE_GUARD_ALLOWLIST），当前出口 IP 为 $ip" \
-        "🚫 claude-guard: the allowlist is empty ($CLAUDE_GUARD_ALLOWLIST); the egress IP is $ip"
+        "🚫 claude-guard: 白名单为空（${(D)CLAUDE_GUARD_ALLOWLIST}），当前出口 IP 为 $ip" \
+        "🚫 claude-guard: the allowlist is empty (${(D)CLAUDE_GUARD_ALLOWLIST}); the egress IP is $ip"
     else
       _claude_guard_say \
         "🚫 claude-guard: 出口 IP $ip 不在白名单（$entries）" \
@@ -92,8 +92,8 @@ _claude_guard_check() {
       [[ -n $ip ]] || return 1
       mkdir -p -- "${CLAUDE_GUARD_ALLOWLIST:h}" &&
         print -r -- "$ip" >> "$CLAUDE_GUARD_ALLOWLIST" || return 1
-      _claude_guard_say "✅ 已把 $ip 加入 $CLAUDE_GUARD_ALLOWLIST" \
-        "✅ added $ip to $CLAUDE_GUARD_ALLOWLIST"
+      _claude_guard_say "✅ 已把 $ip 加入 ${(D)CLAUDE_GUARD_ALLOWLIST}" \
+        "✅ added $ip to ${(D)CLAUDE_GUARD_ALLOWLIST}"
       return 0 ;;
     *) return 1 ;;
   esac

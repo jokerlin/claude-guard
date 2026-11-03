@@ -4,12 +4,7 @@
 
 一个 zsh 插件：在 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 启动前校验出口 IP。claude.ai 看到的 IP 不在白名单时，`claude` 先停下来询问，不会直接连接。
 
-```
-$ claude
-🚫 claude-guard: 出口 IP 192.0.2.9 不在白名单（203.0.113.7）
-   可能原因：代理节点选错 / 当前 shell 关了代理 / 分流规则变化
-   仍要启动 [y] / 中止 [N] / 把 192.0.2.9 加入白名单并启动 [a]:
-```
+![claude-guard 在出口 IP 不在白名单时拦下 claude，按一个键把它加入白名单](docs/demo.zh-CN.gif)
 
 ## 为什么需要
 

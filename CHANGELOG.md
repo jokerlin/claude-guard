@@ -4,6 +4,14 @@ All notable changes to claude-guard. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Demo GIFs in both READMEs, recorded from `docs/demo/demo.tape`.
+
+### Changed
+
+- Messages show the allowlist path with `~` for the home directory.
+
 ## [1.0.0] - 2026-11-03
 
 First public release.

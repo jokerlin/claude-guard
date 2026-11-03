@@ -4,12 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 A zsh plugin that checks your egress IP before [Claude Code](https://docs.anthropic.com/en/docs/claude-code) starts. If the IP that claude.ai sees is not on your allowlist, `claude` stops and asks before it connects.
 
-```
-$ claude
-🚫 claude-guard: egress IP 192.0.2.9 is not in the allowlist (203.0.113.7)
-   Possible causes: wrong proxy node, proxy disabled in this shell, changed routing rules
-   Start anyway [y] / abort [N] / add 192.0.2.9 to the allowlist and start [a]:
-```
+![claude-guard stops claude on an unknown egress IP, then adds it to the allowlist with one key](docs/demo.gif)
 
 ## Why
 
