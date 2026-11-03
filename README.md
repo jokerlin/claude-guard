@@ -77,6 +77,8 @@ Entries must match exactly. IP ranges (CIDR) are not supported.
 
 `claude -h`, `--help`, `-v` and `--version` skip the check, because they do not connect.
 
+`y` starts the session with `CLAUDE_GUARD_SKIP=1`, so the [prompt hook](#check-every-prompt-claude-code-hook) does not block it either.
+
 ## Check without starting claude
 
 ```
@@ -89,7 +91,44 @@ result      not allowed: claude will ask before it starts
 
 The exit status is 0 when the IP is allowed, 1 when it is not, and 2 when claude.ai cannot be reached, so scripts can use it too. A user name and password in the proxy URL are shown as `***`.
 
-## Skip the check
+## Check every prompt (Claude Code hook)
+
+The wrapper checks once, at launch. To also check before each prompt, add the hook to `~/.claude/settings.json`. Use the path where you cloned claude-guard:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "zsh ~/.claude-guard/claude-guard-hook.zsh",
+            "timeout": 15,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Before each prompt, the hook checks the egress IP the same way as the wrapper. When the IP is not on the allowlist, or claude.ai cannot be reached, Claude Code does not send the prompt and shows why, with a command to allow the IP:
+
+```
+claude-guard: egress IP 192.0.2.9 is not in the allowlist (203.0.113.7). The prompt was not sent.
+Fix the proxy and send the prompt again, or allow this IP:
+  echo 192.0.2.9 >> ~/.config/claude-guard/allowed-ips
+```
+
+You can run that command inside Claude Code with the `!` prefix, then send the prompt again.
+
+- A passed check is reused for 60 seconds (`CLAUDE_GUARD_HOOK_TTL`), so most prompts wait for no request. The wrapper's check at launch counts too. A session with other proxy variables does not reuse it.
+- `"onFailure": "block"` blocks the prompt if the hook itself fails or times out. It needs Claude Code 2.1.295 or later.
+- The hook runs with the environment of the claude process. Settings in `~/.zshrc` reach it only when they are exported (`export CLAUDE_GUARD_LANG=zh`), or set them under `env` in `settings.json`.
+- The hook works wherever Claude Code runs, also in IDE extensions, scripts and other shells. It needs zsh to be installed.
+
 
 ```sh
 CLAUDE_GUARD_SKIP=1 claude ...   # skip once
@@ -100,20 +139,26 @@ Inside a Claude Code session, the Bash tool replays your shell functions without
 
 ## What is not checked
 
-claude-guard wraps `claude` in interactive zsh only. Claude Code started in these ways does not go through the check:
+The wrapper works in interactive zsh only. Claude Code started in these ways does not go through the launch check:
 
 - IDE extensions and desktop apps that start the claude binary themselves, instead of typing `claude` into a terminal
 - scripts, cron jobs and `ssh host 'claude ...'` (no interactive zsh)
 - bash, fish and other shells
 - `command claude` and `CLAUDE_GUARD_SKIP=1`, which skip the check on purpose
 
-In these cases, run `claude-guard status` first to see the IP that claude.ai will see.
+The [prompt hook](#check-every-prompt-claude-code-hook) covers the first three before each prompt. Without the hook, run `claude-guard status` first to see the IP that claude.ai will see.
 
-The check also runs once, at launch. If the proxy changes while a session is open, claude-guard does not notice.
+Even with the hook, some requests are not checked:
+
+- requests during a turn: Claude sends requests between tool calls without a new prompt, so a proxy change in the middle of a turn is caught at the next prompt
+- requests that Claude Code makes in the background, and the requests at session start (only the wrapper covers those)
+- up to 60 seconds after a passed check (`CLAUDE_GUARD_HOOK_TTL`)
+
+With `claude -p`, a blocked prompt prints the reason but the exit status is still 0. Scripts cannot tell a blocked prompt from the exit status.
 
 ## Settings
 
-Set these in `~/.zshrc` before the plugin is loaded.
+Set these in `~/.zshrc` before the plugin is loaded. For the prompt hook, export them or set them under `env` in `~/.claude/settings.json`.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -121,15 +166,16 @@ Set these in `~/.zshrc` before the plugin is loaded.
 | `CLAUDE_GUARD_TIMEOUT` | `10` | Seconds to wait for claude.ai. Slow proxies can need 6 s or more |
 | `CLAUDE_GUARD_TRACE_URL` | `https://claude.ai/cdn-cgi/trace` | URL that returns an `ip=` line |
 | `CLAUDE_GUARD_LANG` | from `LC_ALL`, `LC_MESSAGES`, `LANG` | `zh` for Chinese messages, `en` for English |
-| `CLAUDE_GUARD_SKIP` | unset | Any value skips the check |
+| `CLAUDE_GUARD_HOOK_TTL` | `60` | Seconds the prompt hook reuses a passed check. `0` checks every prompt |
+| `CLAUDE_GUARD_SKIP` | unset | Any value skips the check and the prompt hook |
 
 ## Privacy
 
-Each launch makes one HTTPS request to `claude.ai`. claude-guard sends nothing anywhere else and stores nothing except the allowlist file.
+Each check makes one HTTPS request to `claude.ai`. claude-guard sends nothing anywhere else. It stores the allowlist, and the time, IP and a checksum of the proxy variables of the last passed check in `${XDG_CACHE_HOME:-~/.cache}/claude-guard/last-ok`.
 
 ## Uninstall
 
-Remove the `source` line (or the plugin entry) from `~/.zshrc`, then delete the cloned directory and `~/.config/claude-guard`.
+Remove the `source` line (or the plugin entry) from `~/.zshrc` and the hook from `~/.claude/settings.json`, then delete the cloned directory, `~/.config/claude-guard` and `~/.cache/claude-guard`.
 
 ## More
 
