@@ -23,6 +23,17 @@ The tests use fake `curl` and `claude` commands and make no network requests. `C
 
 Add a test for every behavior you change.
 
+## Demo GIFs
+
+When messages change, record the GIFs again with [VHS](https://github.com/charmbracelet/vhs) from the repository root. The tape uses the font JetBrains Maple Mono, so Chinese text lines up with the grid.
+
+```sh
+vhs docs/demo/demo.tape
+DEMO_LANG=zh vhs docs/demo/demo.tape -o docs/demo.zh-CN.gif
+```
+
+The demo runs in `zsh -f` with fake `curl` and `claude` and example IPs (see `docs/demo/setup.zsh`).
+
 ## Rules
 
 - zsh only. Keep the plugin free of other dependencies than `curl`, `sed`, `grep` and `paste`.
@@ -59,6 +70,17 @@ zsh tests/run.zsh                # 全部测试
 测试使用假的 `curl` 和 `claude`，不访问网络。`CLAUDE_GUARD_TTY` 把 y/N/a 的询问指向一个文件，测试借此作答。CI 在 Ubuntu 和 macOS 上运行同样的命令。
 
 每个改动的行为都要加测试。
+
+### 演示 GIF
+
+提示语变化时，在仓库根目录用 [VHS](https://github.com/charmbracelet/vhs) 重录 GIF。录制脚本使用字体 JetBrains Maple Mono，中文才能和字符网格对齐。
+
+```sh
+vhs docs/demo/demo.tape
+DEMO_LANG=zh vhs docs/demo/demo.tape -o docs/demo.zh-CN.gif
+```
+
+演示在 `zsh -f` 里运行，使用假的 `curl`、`claude` 和示例 IP（见 `docs/demo/setup.zsh`）。
 
 ### 规则
 

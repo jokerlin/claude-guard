@@ -67,7 +67,7 @@ FAKE_IP=192.0.2.9 run "added IP passes next time" 0 "claude-ran*" 'claude'
 reset_state
 FAKE_IP=192.0.2.9 run "missing allowlist: says empty" 1 "*allowlist is empty*" 'claude'
 print -n a > "$WORK/tty"
-FAKE_IP=192.0.2.9 run "missing allowlist dir is created on a" 0 "*added*claude-ran*" \
+FAKE_IP=192.0.2.9 run "missing allowlist dir is created on a, path shown with ~" 0 "*added 192.0.2.9 to ~/.config/claude-guard/allowed-ips*claude-ran*" \
   "CLAUDE_GUARD_ALLOWLIST='$WORK/home/.config/claude-guard/allowed-ips' claude"
 [[ $(cat "$WORK/home/.config/claude-guard/allowed-ips") == 192.0.2.9 ]] &&
   { (( pass += 1 )); print "ok   created file holds the IP"; } ||
