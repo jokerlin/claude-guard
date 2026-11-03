@@ -4,6 +4,8 @@ All notable changes to claude-guard. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-03
+
 ### Added
 
 - Prompt hook `claude-guard-hook.zsh` for Claude Code (`UserPromptSubmit`): checks the egress IP before each prompt and blocks the prompt when the IP is not allowed or claude.ai cannot be reached. It also covers Claude Code started from IDE extensions, scripts and other shells. A passed check is reused for `CLAUDE_GUARD_HOOK_TTL` seconds (default 60) with the same proxy variables.
@@ -29,5 +31,6 @@ First public release.
 - English and Chinese messages, chosen from the locale.
 - Loads as a plugin in Oh My Zsh, zinit and antidote (`claude-guard.plugin.zsh`).
 
-[Unreleased]: https://github.com/jokerlin/claude-guard/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jokerlin/claude-guard/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jokerlin/claude-guard/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jokerlin/claude-guard/releases/tag/v1.0.0
