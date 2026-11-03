@@ -1,0 +1,5 @@
+# claude-guard allowlist: one IP per line. "#" starts a comment.
+# Copy to ~/.config/claude-guard/allowed-ips and replace the examples.
+# Find your current egress IP: curl -s https://claude.ai/cdn-cgi/trace | grep ^ip=
+203.0.113.7      # home connection
+198.51.100.20    # VPS

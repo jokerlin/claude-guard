@@ -1,0 +1,3 @@
+# Personal allowlist; the repo ships allowed-ips.example
+allowed-ips
+.DS_Store

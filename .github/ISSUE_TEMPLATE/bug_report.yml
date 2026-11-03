@@ -1,0 +1,31 @@
+name: Bug report
+description: claude-guard does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Replace your real IP addresses with examples such as 203.0.113.7 before you post.
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, `zsh --version`, plugin manager (none / Oh My Zsh / zinit / antidote), `claude --version`
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Put 203.0.113.7 in the allowlist
+        2. Run `claude`
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+      description: Paste the claude-guard output.
+    validations:
+      required: true

@@ -1,0 +1,20 @@
+# Changelog
+
+All notable changes to claude-guard. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+## [1.0.0] - 2026-11-03
+
+First public release.
+
+### Added
+
+- `claude` wrapper that checks the egress IP from `https://claude.ai/cdn-cgi/trace` against an allowlist before Claude Code starts, and asks `y` / `a` / `N` on a mismatch.
+- Allowlist at `${XDG_CONFIG_HOME:-~/.config}/claude-guard/allowed-ips`, with inline `#` comments.
+- Settings `CLAUDE_GUARD_ALLOWLIST`, `CLAUDE_GUARD_TIMEOUT`, `CLAUDE_GUARD_TRACE_URL`, `CLAUDE_GUARD_LANG`, `CLAUDE_GUARD_SKIP`.
+- English and Chinese messages, chosen from the locale.
+- Loads as a plugin in Oh My Zsh, zinit and antidote (`claude-guard.plugin.zsh`).
+
+[Unreleased]: https://github.com/jokerlin/claude-guard/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/jokerlin/claude-guard/releases/tag/v1.0.0
