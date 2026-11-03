@@ -46,5 +46,6 @@ When Claude Code runs its Bash tool, it replays a snapshot of the user's shell f
 
 ## Scope
 
-- Only interactive zsh. Scripts, cron jobs and other shells call the real `claude` directly.
+- Only interactive zsh. Scripts, cron jobs, other shells, and IDE extensions or desktop apps that start the claude binary themselves call the real `claude` directly. `claude-guard status` shows what the check would see, for these cases and for debugging a proxy.
+- Only at launch. A proxy change during a session is not noticed.
 - No CIDR ranges, no IPv4/IPv6 normalization.

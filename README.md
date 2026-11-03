@@ -77,6 +77,18 @@ Entries must match exactly. IP ranges (CIDR) are not supported.
 
 `claude -h`, `--help`, `-v` and `--version` skip the check, because they do not connect.
 
+## Check without starting claude
+
+```
+$ claude-guard status
+egress IP   192.0.2.9  (0.4 s, https://claude.ai/cdn-cgi/trace)
+allowlist   ~/.config/claude-guard/allowed-ips  (1 entry: 203.0.113.7)
+proxy       https_proxy=http://127.0.0.1:7890
+result      not allowed: claude will ask before it starts
+```
+
+The exit status is 0 when the IP is allowed, 1 when it is not, and 2 when claude.ai cannot be reached, so scripts can use it too. A user name and password in the proxy URL are shown as `***`.
+
 ## Skip the check
 
 ```sh
@@ -85,6 +97,19 @@ command claude ...               # call the real binary
 ```
 
 Inside a Claude Code session, the Bash tool replays your shell functions without claude-guard's helper functions. In that case the wrapper lets `claude` through, because the parent session already passed the check.
+
+## What is not checked
+
+claude-guard wraps `claude` in interactive zsh only. Claude Code started in these ways does not go through the check:
+
+- IDE extensions and desktop apps that start the claude binary themselves, instead of typing `claude` into a terminal
+- scripts, cron jobs and `ssh host 'claude ...'` (no interactive zsh)
+- bash, fish and other shells
+- `command claude` and `CLAUDE_GUARD_SKIP=1`, which skip the check on purpose
+
+In these cases, run `claude-guard status` first to see the IP that claude.ai will see.
+
+The check also runs once, at launch. If the proxy changes while a session is open, claude-guard does not notice.
 
 ## Settings
 
