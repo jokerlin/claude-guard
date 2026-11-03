@@ -24,6 +24,8 @@ EOF
 chmod +x "$WORK/bin/curl" "$WORK/bin/claude"
 
 pass=0 fail=0
+# Runs the prompt hook the way Claude Code does, with a JSON input on stdin.
+HOOK="zsh '$ROOT/claude-guard-hook.zsh' <<< '{\"prompt\":\"hi\"}'"
 
 # run <name> <expected exit> <expected output pattern> <zsh code>
 # The code runs in a fresh `zsh -f` with the plugin sourced.
@@ -69,7 +71,7 @@ FAKE_IP=192.0.2.9 run "missing allowlist: says empty" 1 "*allowlist is empty*" '
 print -n a > "$WORK/tty"
 FAKE_IP=192.0.2.9 run "missing allowlist dir is created on a, path shown with ~" 0 "*added 192.0.2.9 to ~/.config/claude-guard/allowed-ips*claude-ran*" \
   "CLAUDE_GUARD_ALLOWLIST='$WORK/home/.config/claude-guard/allowed-ips' claude"
-[[ $(cat "$WORK/home/.config/claude-guard/allowed-ips") == 192.0.2.9 ]] &&
+[[ $(cut -d" " -f1 "$WORK/home/.config/claude-guard/allowed-ips") == 192.0.2.9 ]] &&
   { (( pass += 1 )); print "ok   created file holds the IP"; } ||
   { (( fail += 1 )); print "FAIL created file holds the IP"; }
 run "default allowlist path follows XDG_CONFIG_HOME" 0 "/x/claude-guard/allowed-ips" \
@@ -136,13 +138,44 @@ FAKE_IP=203.0.113.7 run "status: Chinese output" 0 "出口 IP   203.0.113.7*结�
   'CLAUDE_GUARD_LANG=zh claude-guard status'
 FAKE_IP= run "check: proxy password is hidden" 1 "*http://\*\*\*@127.0.0.1:7890*" \
   'out=$(https_proxy=http://user:secret@127.0.0.1:7890 claude 2>&1); rc=$?; [[ $out != *secret* ]] && print -r -- $out; return $rc'
-run "claude-guard without arguments shows usage" 0 "usage: claude-guard status*" 'claude-guard'
-run "claude-guard unknown subcommand: exit 2" 2 "usage: claude-guard status*" 'claude-guard bogus'
-run "claude-guard in a function snapshot: exit 2" 2 "*helper functions are not loaded*" \
+run "claude-guard without arguments shows usage" 0 "usage:*claude-guard status*claude-guard add*claude-guard remove*" 'claude-guard'
+run "claude-guard unknown subcommand: exit 2" 2 "usage:*" 'claude-guard bogus'
+FAKE_IP=203.0.113.7 run "claude-guard works without the helper functions (Bash tool)" 0 "*result      allowed*" \
   'unfunction -m "_claude_guard_*"; claude-guard status'
 
+# --- claude-guard add / remove
+reset_state
+printf '# home\n203.0.113.7  # home\n198.51.100.1\n' > "$WORK/allow"
+FAKE_IP=192.0.2.9 run "add without IP adds the egress IP" 0 "✅ added 192.0.2.9 to */allow" 'claude-guard add'
+[[ $(tail -1 "$WORK/allow") == "192.0.2.9    # added "<->-<->-<-> ]] &&
+  { (( pass += 1 )); print "ok   add writes the IP with a date comment"; } ||
+  { (( fail += 1 )); print "FAIL add writes the IP with a date comment"; tail -1 "$WORK/allow"; }
+FAKE_IP=192.0.2.9 run "add without IP writes the cache (hook passes)" 0 "" "FAKE_IP= $HOOK"
+FAKE_IP=192.0.2.9 run "add of a listed IP says so" 0 "192.0.2.9 is already in the allowlist*" 'claude-guard add'
+run "add with an IPv4" 0 "✅ added 198.51.100.77*" 'claude-guard add 198.51.100.77'
+run "add with an IPv6 is lowercased" 0 "✅ added 2001:db8::1 *" 'claude-guard add 2001:DB8::1'
+run "add rejects a part above 255" 1 "*not a valid IP: 203.0.113.256*" 'claude-guard add 203.0.113.256'
+run "add rejects three parts" 1 "*not a valid IP: 1.2.3*" 'claude-guard add 1.2.3'
+run "add rejects a name" 1 "*not a valid IP: example.com*" 'claude-guard add example.com'
+run "add rejects two arguments" 2 "usage:*" 'claude-guard add 192.0.2.1 192.0.2.2'
+FAKE_IP= run "add without IP, claude.ai not reachable: exit 2" 2 "*cannot reach*" 'claude-guard add'
+run "add in Chinese" 0 "✅ 已把 192.0.2.44 加入*" 'CLAUDE_GUARD_LANG=zh claude-guard add 192.0.2.44'
+run "add creates a missing directory" 0 "✅ added 192.0.2.45*" \
+  "CLAUDE_GUARD_ALLOWLIST='$WORK/new/dir/allowed-ips' claude-guard add 192.0.2.45 && grep -q '^192.0.2.45 ' '$WORK/new/dir/allowed-ips'"
+run "add starts a new line when the file has no final newline" 0 "*" \
+  "printf 203.0.113.7 > '$WORK/nonl'; CLAUDE_GUARD_ALLOWLIST='$WORK/nonl' claude-guard add 192.0.2.46 >/dev/null; [[ \$(sed -n 2p '$WORK/nonl') == '192.0.2.46 '* && \$(sed -n 1p '$WORK/nonl') == 203.0.113.7 ]]"
+
+printf '# home\n203.0.113.7  # home\n198.51.100.1\n# vps\n' > "$WORK/allow"
+run "remove deletes only that entry" 0 "✅ removed 203.0.113.7 from */allow" 'claude-guard remove 203.0.113.7'
+[[ $(<"$WORK/allow") == $'# home\n198.51.100.1\n# vps' ]] &&
+  { (( pass += 1 )); print "ok   remove keeps the other lines and comments"; } ||
+  { (( fail += 1 )); print "FAIL remove keeps the other lines and comments"; cat "$WORK/allow"; }
+run "remove of an IP not listed: exit 1" 1 "*203.0.113.7 is not in the allowlist*" 'claude-guard remove 203.0.113.7'
+run "remove needs an IP" 2 "usage:*" 'claude-guard remove'
+FAKE_IP=198.51.100.1 run "removed IP is blocked at once, even when cached" 2 "*not in the allowlist*" \
+  "$HOOK >/dev/null; claude-guard remove 198.51.100.1 >/dev/null; $HOOK"
+
 # --- prompt hook (claude-guard-hook.zsh)
-HOOK="zsh '$ROOT/claude-guard-hook.zsh' <<< '{\"prompt\":\"hi\"}'"
 CACHE="$WORK/home/.cache/claude-guard/last-ok"
 reset_state
 echo 203.0.113.7 > "$WORK/allow"
@@ -160,11 +193,13 @@ FAKE_IP= run "hook: cached IP no longer allowed is not reused" 2 "*cannot reach*
   "zmodload zsh/datetime; print -r -- \"\$EPOCHSECONDS 192.0.2.50 \$(_claude_guard_proxy_key)\" > '$CACHE'; $HOOK"
 rm -f "$CACHE"
 FAKE_IP=192.0.2.9 run "hook: unknown IP blocks with a fix command" 2 \
-  "*egress IP 192.0.2.9 is not in the allowlist \\(203.0.113.7\\). The prompt was not sent.*echo 192.0.2.9 >> */allow" "$HOOK"
+  "*egress IP 192.0.2.9 is not in the allowlist \\(203.0.113.7\\). The prompt was not sent.*start the line with !*claude-guard add 192.0.2.9" "$HOOK"
 FAKE_IP=192.0.2.9 run "hook: Chinese message" 2 "*出口 IP 192.0.2.9 不在白名单*这条 prompt 没有发送*" "CLAUDE_GUARD_LANG=zh $HOOK"
-FAKE_IP=192.0.2.9 run "hook: missing allowlist dir gets mkdir in the command" 2 \
-  "*mkdir -p ~/.config/claude-guard && echo 192.0.2.9 >> ~/.config/claude-guard/allowed-ips" \
-  "CLAUDE_GUARD_ALLOWLIST='$WORK/home/.config/claude-guard/allowed-ips' $HOOK"
+FAKE_IP=192.0.2.9 run "hook: bare command when the user's PATH has bin/" 2 "*!\\):?  claude-guard add 192.0.2.9" "$HOOK"
+FAKE_IP=192.0.2.9 run "hook: full path when the user's PATH lacks bin/" 2 "*!\\):?  $ROOT/bin/claude-guard add 192.0.2.9" \
+  "PATH='$WORK/bin:/usr/bin:/bin' $HOOK"
+FAKE_IP=192.0.2.9 run "hook: bare command as a Claude Code plugin" 2 "*!\\):?  claude-guard add 192.0.2.9" \
+  "CLAUDE_PLUGIN_ROOT='$ROOT' PATH='$WORK/bin:/usr/bin:/bin' $HOOK"
 FAKE_IP=192.0.2.9 run "hook: CLAUDE_GUARD_SKIP lets the prompt through" 0 "" "CLAUDE_GUARD_SKIP=1 $HOOK"
 FAKE_IP=203.0.113.7 run "hook: cache does not store the proxy password" 0 "" \
   "https_proxy=http://user:secret@127.0.0.1:7890 $HOOK; ! grep -q secret '$CACHE'"

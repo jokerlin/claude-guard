@@ -21,7 +21,12 @@
 
 ## 安装
 
-任选一种。
+claude-guard 分两部分。先装第一部分；想在每条 prompt 前也检查，再装第二部分。
+
+1. **zsh 插件**：启动时检查，以及 `claude-guard` 命令。按下面的方式安装。
+2. **Claude Code 插件**：每条 prompt 前检查。见[每条 prompt 前也检查](#每条-prompt-前也检查claude-code-插件)。
+
+zsh 插件任选一种方式安装：
 
 **直接 source**
 
@@ -56,13 +61,7 @@ mkdir -p ~/.config/claude-guard
 cp allowed-ips.example ~/.config/claude-guard/allowed-ips   # 然后编辑
 ```
 
-也可以跳过这一步：第一次运行时白名单为空，按 `a` 把当前 IP 加进去。
-
-查看当前出口 IP：
-
-```sh
-curl -s https://claude.ai/cdn-cgi/trace | grep ^ip=
-```
+或者用 `claude-guard add` 加入当前出口 IP。也可以跳过这一步：第一次运行时白名单为空，按 `a` 把当前 IP 加进去。
 
 白名单按完整字符串匹配，不支持 IP 段（CIDR）。
 
@@ -77,9 +76,15 @@ curl -s https://claude.ai/cdn-cgi/trace | grep ^ip=
 
 `claude -h`、`--help`、`-v`、`--version` 不联网，跳过检查。
 
-按 `y` 时，会话带 `CLAUDE_GUARD_SKIP=1` 启动，[prompt hook](#每条-prompt-前也检查claude-code-hook) 也不会拦它。
+按 `y` 时，会话带 `CLAUDE_GUARD_SKIP=1` 启动，[prompt hook](#每条-prompt-前也检查claude-code-插件) 也不会拦它。
 
-## 不启动 claude，只看检查结果
+## claude-guard 命令
+
+| 命令 | 作用 |
+|---|---|
+| `claude-guard status` | 显示出口 IP、白名单和检查结果，不启动 claude |
+| `claude-guard add [IP]` | 把 IP 加入白名单，并用注释记下日期。不写 IP 时，加入当前出口 IP |
+| `claude-guard remove IP` | 把 IP 移出白名单。其他行和注释保持不变 |
 
 ```
 $ claude-guard status
@@ -89,11 +94,22 @@ $ claude-guard status
 结果      不在白名单：启动 claude 时会询问
 ```
 
-退出码：在白名单为 0，不在为 1，无法访问 claude.ai 为 2，脚本里也能用。代理地址里的用户名和密码显示为 `***`。
+`status` 的退出码：在白名单为 0，不在为 1，无法访问 claude.ai 为 2，脚本里也能用。代理地址里的用户名和密码显示为 `***`。
 
-## 每条 prompt 前也检查（Claude Code hook）
+`claude-guard` 是 `bin/` 下的独立程序，不是 shell 函数，所以在 Claude Code 里也能用：行首加 `!`，例如 `! claude-guard add`。zsh 插件和 Claude Code 插件都会把 `bin/` 加进 `PATH`。
 
-包装函数只在启动时检查一次。要在每条 prompt 前也检查，把 hook 加到 `~/.claude/settings.json`。路径换成你克隆 claude-guard 的位置：
+## 每条 prompt 前也检查（Claude Code 插件）
+
+包装函数只在启动时检查一次。Claude Code 插件注册一个 `UserPromptSubmit` hook，在每条 prompt 前也检查。在 Claude Code 里运行：
+
+```
+/plugin marketplace add jokerlin/claude-guard
+/plugin install egress-claude-guard@jokerlin
+```
+
+Claude Code 保留了以 `claude-` 开头的插件名，所以插件名是 `egress-claude-guard`。
+
+不装插件时，也可以把同样的 hook 手动加到 `~/.claude/settings.json`。路径换成你克隆 claude-guard 的位置。插件和手动配置二选一，两个都配会让每条 prompt 检查两次。
 
 ```json
 {
@@ -118,17 +134,18 @@ hook 在每条 prompt 前用和包装函数相同的方式检查出口 IP。IP �
 
 ```
 claude-guard: 出口 IP 192.0.2.9 不在白名单（203.0.113.7），这条 prompt 没有发送。
-修好代理后重新发送；或者把这个 IP 加入白名单：
-  echo 192.0.2.9 >> ~/.config/claude-guard/allowed-ips
+修好代理后重新发送；或者把这个 IP 加入白名单（在 Claude Code 里，行首加 !）：
+  claude-guard add 192.0.2.9
 ```
 
-这条命令可以在 Claude Code 里加 `!` 前缀运行，然后重新发送 prompt。
+在 Claude Code 里运行 `! claude-guard add 192.0.2.9`，然后重新发送 prompt。如果你的 shell 的 `PATH` 里没有 `claude-guard`，提示里会给出命令的完整路径。
 
 - 检查通过后，60 秒内复用结果（`CLAUDE_GUARD_HOOK_TTL`），大多数 prompt 不用等请求。启动时包装函数的检查也算在内。代理变量不同的会话不会复用。
 - `"onFailure": "block"` 让 hook 自身出错或超时时也拦下 prompt，需要 Claude Code 2.1.295 或更高版本。
-- hook 继承 claude 进程的环境变量。`~/.zshrc` 里的设置项必须 export（`export CLAUDE_GUARD_LANG=zh`）才能传到 hook，或者写在 `settings.json` 的 `env` 里。
+- hook 继承 claude 进程的环境变量。`~/.zshrc` 里的设置项必须 export 才能传到 hook，或者写在 `settings.json` 的 `env` 里。
 - hook 在 Claude Code 运行的任何地方生效，包括 IDE 扩展、脚本和其他 shell。机器上需要装有 zsh。
 
+## 跳过检查
 
 ```sh
 CLAUDE_GUARD_SKIP=1 claude ...   # 跳过一次
@@ -146,19 +163,20 @@ command claude ...               # 直接调用真正的 claude
 - bash、fish 等其他 shell
 - `command claude` 和 `CLAUDE_GUARD_SKIP=1`，它们按设计跳过检查
 
-[prompt hook](#每条-prompt-前也检查claude-code-hook) 在每条 prompt 前覆盖前三种情况。没装 hook 时，先运行 `claude-guard status`，看 claude.ai 将会看到的 IP。
+[prompt hook](#每条-prompt-前也检查claude-code-插件) 在每条 prompt 前覆盖前三种情况。没装 hook 时，先运行 `claude-guard status`，看 claude.ai 将会看到的 IP。
 
 装了 hook，仍有一些请求不受检查：
 
 - 一个回合内的请求：Claude 在工具调用之间发请求，不经过新的 prompt。回合中途代理变了，要到下一条 prompt 才拦下
 - Claude Code 的后台请求，以及会话启动阶段的请求（只有包装函数覆盖启动阶段）
 - 检查通过后的 60 秒内（`CLAUDE_GUARD_HOOK_TTL`）
+- Claude Code 里以 `!` 开头的命令：Claude 会回应命令输出，但不触发 `UserPromptSubmit`（在 Claude Code 2.1.317 上观察到）
 
 用 `claude -p` 时，被拦下的 prompt 会打印原因，但退出码仍是 0。脚本无法靠退出码判断 prompt 是否被拦。
 
 ## 设置项
 
-在 `~/.zshrc` 里、加载插件之前设置。要让 prompt hook 也读到，须 export，或写在 `~/.claude/settings.json` 的 `env` 里。
+在 `~/.zshrc` 里、加载插件之前设置。prompt hook 和 `claude-guard` 命令是单独运行的程序，所以变量必须 export（`export CLAUDE_GUARD_LANG=zh`），或写在 `~/.claude/settings.json` 的 `env` 里。
 
 | 变量 | 默认值 | 含义 |
 |---|---|---|
@@ -169,7 +187,7 @@ command claude ...               # 直接调用真正的 claude
 | `CLAUDE_GUARD_HOOK_TTL` | `60` | prompt hook 复用检查结果的秒数。`0` 表示每条 prompt 都检查 |
 | `CLAUDE_GUARD_SKIP` | 未设置 | 设为任意值即跳过检查和 prompt hook |
 
-注意：`LC_ALL` 优先于 `LANG`。如果你设了 `LC_ALL=en_US.UTF-8` 又想看中文，设置 `CLAUDE_GUARD_LANG=zh`。
+注意：`LC_ALL` 优先于 `LANG`。如果你设了 `LC_ALL=en_US.UTF-8` 又想看中文，设置 `export CLAUDE_GUARD_LANG=zh`。
 
 ## 隐私
 
@@ -177,7 +195,7 @@ command claude ...               # 直接调用真正的 claude
 
 ## 卸载
 
-从 `~/.zshrc` 删掉 `source` 行（或插件条目），从 `~/.claude/settings.json` 删掉 hook，再删除克隆的目录、`~/.config/claude-guard` 和 `~/.cache/claude-guard`。
+从 `~/.zshrc` 删掉 `source` 行（或插件条目）。在 Claude Code 里运行 `/plugin uninstall egress-claude-guard@jokerlin`，或者从 `~/.claude/settings.json` 删掉 hook。再删除克隆的目录、`~/.config/claude-guard` 和 `~/.cache/claude-guard`。
 
 ## 更多
 

@@ -13,6 +13,13 @@
 # Where the y/N/a answer is read from. Tests point it at a file.
 : ${CLAUDE_GUARD_TTY:=/dev/tty}
 
+# Directory of this file. bin/ goes on PATH for the claude-guard command, which
+# also works where only PATH survives, such as the Bash tool of Claude Code.
+typeset -g _claude_guard_root=${${(%):-%x}:A:h}
+# PATH as it was before, to tell whether the user's shell can run `claude-guard`.
+typeset -g _claude_guard_user_path=$PATH
+(( ${path[(Ie)$_claude_guard_root/bin]} )) || path+=("$_claude_guard_root/bin")
+
 # Message language: CLAUDE_GUARD_LANG=zh|en, otherwise taken from the locale.
 _claude_guard_zh() {
   local l=${CLAUDE_GUARD_LANG:-${LC_ALL:-${LC_MESSAGES:-$LANG}}}
@@ -95,7 +102,7 @@ _claude_guard_hook() {
   [[ -n $CLAUDE_GUARD_SKIP ]] && return 0
   _claude_guard_recent_ok && return 0
 
-  local ip=$(_claude_guard_exit_ip) entries proxy file_shown cmd
+  local ip=$(_claude_guard_exit_ip) entries proxy cmd
   if _claude_guard_allowed "$ip"; then
     _claude_guard_mark_ok "$ip"
     return 0
@@ -112,17 +119,13 @@ Fix the proxy, then send the prompt again."
   fi
 
   entries=$(_claude_guard_entries | paste -sd ' ' -)
-  # A command the user can paste, also with the ! prefix inside Claude Code.
-  file_shown=${(D)CLAUDE_GUARD_ALLOWLIST}
-  [[ $file_shown == *[[:space:]\'\"\$\`\\]* ]] && file_shown=${(q-)CLAUDE_GUARD_ALLOWLIST}
-  cmd="echo $ip >> $file_shown"
-  [[ -d ${CLAUDE_GUARD_ALLOWLIST:h} ]] || cmd="mkdir -p ${file_shown:h} && $cmd"
+  cmd="$(_claude_guard_command) add $ip"
   _claude_guard_say \
     "claude-guard: 出口 IP $ip 不在白名单（${entries:-空}），这条 prompt 没有发送。
-修好代理后重新发送；或者把这个 IP 加入白名单：
+修好代理后重新发送；或者把这个 IP 加入白名单（在 Claude Code 里，行首加 !）：
   $cmd" \
     "claude-guard: egress IP $ip is not in the allowlist (${entries:-empty}). The prompt was not sent.
-Fix the proxy and send the prompt again, or allow this IP:
+Fix the proxy and send the prompt again, or allow this IP (in Claude Code, start the line with !):
   $cmd"
   return 2
 }
@@ -182,11 +185,7 @@ _claude_guard_check() {
   case $reply in
     [yY]) return 3 ;;
     [aA])
-      [[ -n $ip ]] || return 1
-      mkdir -p -- "${CLAUDE_GUARD_ALLOWLIST:h}" &&
-        print -r -- "$ip" >> "$CLAUDE_GUARD_ALLOWLIST" || return 1
-      _claude_guard_say "✅ 已把 $ip 加入 ${(D)CLAUDE_GUARD_ALLOWLIST}" \
-        "✅ added $ip to ${(D)CLAUDE_GUARD_ALLOWLIST}"
+      [[ -n $ip ]] && _claude_guard_add "$ip" >&2 || return 1
       _claude_guard_mark_ok "$ip"
       return 0 ;;
     *) return 1 ;;
@@ -245,23 +244,125 @@ _claude_guard_status() {
   return rc
 }
 
-_claude_guard_usage() {
-  _claude_guard_text "用法：claude-guard status   显示出口 IP、白名单和检查结果，不启动 claude
-      退出码：0 在白名单，1 不在白名单，2 无法访问 claude.ai" \
-    "usage: claude-guard status   show the egress IP, the allowlist and the result, without starting claude
-       exit status: 0 allowed, 1 not allowed, 2 claude.ai not reachable"
+# ---- allowlist edits, shared by `claude-guard add/remove` and the `a` answer ----
+
+# IPv4 (each part 0-255) or IPv6 (hex digits and colons).
+_claude_guard_valid_ip() {
+  setopt local_options extended_glob
+  local ip=$1 part
+  if [[ $ip == <->.<->.<->.<-> ]]; then
+    for part in ${(s:.:)ip}; do
+      [[ ${#part} -le 3 ]] && (( part <= 255 )) || return 1
+    done
+    return 0
+  fi
+  [[ $ip == *:* && $ip == [[:xdigit:]:]## && ${#ip} -le 39 ]]
 }
 
-function claude-guard {
-  # In the Bash tool of Claude Code, functions starting with "_" are missing.
-  if (( ! $+functions[_claude_guard_status] )); then
-    print -u2 -r -- "claude-guard: helper functions are not loaded in this shell; run it in your own terminal"
-    return 2
+# Append an IP to the allowlist, with the date as a comment. Messages go to stdout.
+# Returns 0 when the IP was added or was already there, 1 when the file cannot be written.
+_claude_guard_add() {
+  local ip=$1 file=$CLAUDE_GUARD_ALLOWLIST
+  if _claude_guard_allowed "$ip"; then
+    _claude_guard_text "$ip 已在白名单（${(D)file}）" "$ip is already in the allowlist (${(D)file})"
+    return 0
   fi
-  case ${1:-help} in
-    status) _claude_guard_status ;;
-    help|-h|--help) _claude_guard_usage ;;
-    *) _claude_guard_usage >&2; return 2 ;;
+  zmodload -F zsh/datetime b:strftime p:EPOCHSECONDS 2>/dev/null
+  {
+    mkdir -p -- "${file:h}" &&
+      # Start on a new line when the file does not end with one.
+      { [[ ! -s $file || -z $(tail -c 1 -- "$file") ]] || print >> "$file" } &&
+      print -r -- "$ip    # added $(strftime %F $EPOCHSECONDS)" >> "$file"
+  } 2>/dev/null || {
+    _claude_guard_say "claude-guard: 无法写入 ${(D)file}" "claude-guard: cannot write ${(D)file}"
+    return 1
+  }
+  _claude_guard_text "✅ 已把 $ip 加入 ${(D)file}" "✅ added $ip to ${(D)file}"
+}
+
+# Remove every line whose entry is the IP; other lines and comments stay as they are.
+# Returns 0 when removed, 1 when the IP is not in the allowlist or the file cannot be written.
+_claude_guard_remove() {
+  local ip=$1 file=$CLAUDE_GUARD_ALLOWLIST tmp
+  if ! _claude_guard_allowed "$ip"; then
+    _claude_guard_say "claude-guard: $ip 不在白名单（${(D)file}）" \
+      "claude-guard: $ip is not in the allowlist (${(D)file})"
+    return 1
+  fi
+  tmp="$file.claude-guard.$$"
+  {
+    awk -v ip="$ip" '{ e = $0; sub(/#.*/, "", e); gsub(/[[:space:]]/, "", e) } e != ip' "$file" > "$tmp" &&
+      mv -f -- "$tmp" "$file"
+  } 2>/dev/null || {
+    rm -f -- "$tmp"
+    _claude_guard_say "claude-guard: 无法写入 ${(D)file}" "claude-guard: cannot write ${(D)file}"
+    return 1
+  }
+  _claude_guard_text "✅ 已把 $ip 移出 ${(D)file}" "✅ removed $ip from ${(D)file}"
+}
+
+# How to call the claude-guard command in a message: the bare name when the
+# user's PATH finds this copy, or when running as a Claude Code plugin (its bin/
+# is on the PATH of the Bash tool); the full path otherwise.
+_claude_guard_command() {
+  local bin=$_claude_guard_root/bin/claude-guard found
+  found=$(PATH=$_claude_guard_user_path whence -p claude-guard 2>/dev/null)
+  if [[ -n $found && ${found:A} == ${bin:A} ]] ||
+     [[ -n ${CLAUDE_PLUGIN_ROOT-} && ${CLAUDE_PLUGIN_ROOT:A} == ${_claude_guard_root:A} ]]; then
+    print -r -- claude-guard
+  else
+    local shown=${(D)bin}
+    [[ $shown == *[[:space:]\'\"\$\`\\]* ]] && shown=${(q-)bin}
+    print -r -- $shown
+  fi
+}
+
+_claude_guard_usage() {
+  _claude_guard_text "用法：
+  claude-guard status        显示出口 IP、白名单和检查结果，不启动 claude
+                             退出码：0 在白名单，1 不在白名单，2 无法访问 claude.ai
+  claude-guard add [IP]      把 IP 加入白名单；不写 IP 时加入当前出口 IP
+  claude-guard remove IP     把 IP 移出白名单" \
+    "usage:
+  claude-guard status        show the egress IP, the allowlist and the result, without starting claude
+                             exit status: 0 allowed, 1 not allowed, 2 claude.ai not reachable
+  claude-guard add [IP]      add an IP to the allowlist; without IP, the current egress IP
+  claude-guard remove IP     remove an IP from the allowlist"
+}
+
+# Entry point of bin/claude-guard.
+_claude_guard_cli() {
+  local sub=${1-} ip
+  (( $# )) && shift
+  case $sub in
+    status)
+      (( $# == 0 )) || { _claude_guard_usage >&2; return 2 }
+      _claude_guard_status ;;
+    add)
+      (( $# <= 1 )) || { _claude_guard_usage >&2; return 2 }
+      if (( $# == 1 )); then
+        ip=${1:l}
+        _claude_guard_valid_ip "$ip" || {
+          _claude_guard_say "claude-guard: 不是有效的 IP：$1" "claude-guard: not a valid IP: $1"
+          return 1
+        }
+        _claude_guard_add "$ip"
+      else
+        ip=$(_claude_guard_exit_ip)
+        [[ -n $ip ]] || {
+          _claude_guard_say "claude-guard: 无法访问 $CLAUDE_GUARD_TRACE_URL，取不到当前出口 IP" \
+            "claude-guard: cannot reach $CLAUDE_GUARD_TRACE_URL to get the egress IP"
+          return 2
+        }
+        _claude_guard_add "$ip" && _claude_guard_mark_ok "$ip"
+      fi ;;
+    remove)
+      (( $# == 1 )) || { _claude_guard_usage >&2; return 2 }
+      _claude_guard_remove "${1:l}" ;;
+    help|-h|--help|'')
+      _claude_guard_usage ;;
+    *)
+      _claude_guard_usage >&2; return 2 ;;
   esac
 }
 

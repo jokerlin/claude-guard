@@ -21,6 +21,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zsh
       - run: zsh --version
       - name: Syntax check
-        run: zsh -n claude-guard.plugin.zsh && zsh -n claude-guard-hook.zsh && zsh -n tests/run.zsh
+        run: zsh -n claude-guard.plugin.zsh && zsh -n claude-guard-hook.zsh && zsh -n bin/claude-guard && zsh -n tests/run.zsh
+      - name: Plugin manifests are valid JSON
+        run: jq empty .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json
       - name: Tests
         run: zsh tests/run.zsh

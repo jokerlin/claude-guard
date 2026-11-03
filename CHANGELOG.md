@@ -4,6 +4,22 @@ All notable changes to claude-guard. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `claude-guard add [IP]` adds an IP to the allowlist with the date as a comment; without IP, it adds the current egress IP. `claude-guard remove IP` removes one and keeps the other lines and comments.
+- Claude Code plugin `egress-claude-guard` in the marketplace `jokerlin` (this repository): `/plugin marketplace add jokerlin/claude-guard`, then `/plugin install egress-claude-guard@jokerlin`. It registers the prompt hook and puts the `claude-guard` command on the `PATH` of the Bash tool.
+
+### Changed
+
+- `claude-guard` is now a program in `bin/` instead of a shell function, so it also works inside Claude Code with the `!` prefix. The zsh plugin puts `bin/` on `PATH`.
+- The prompt hook suggests `claude-guard add <ip>` instead of an `echo` command.
+- Answering `a` at launch writes the IP with a date comment, the same way as `claude-guard add`.
+
+### Fixed
+
+- Adding an IP to an allowlist that does not end with a newline no longer joins it to the last line.
+- The README heading "Skip the check" was missing since 1.1.0.
+
 ## [1.1.0] - 2026-11-03
 
 ### Added

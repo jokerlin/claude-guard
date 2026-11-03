@@ -1,0 +1,15 @@
+{
+  "name": "jokerlin",
+  "description": "Plugins by jokerlin",
+  "owner": {
+    "name": "jokerlin",
+    "url": "https://github.com/jokerlin"
+  },
+  "plugins": [
+    {
+      "name": "egress-claude-guard",
+      "source": "./",
+      "description": "Check the egress IP that claude.ai sees before each prompt"
+    }
+  ]
+}

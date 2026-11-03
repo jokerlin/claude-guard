@@ -1,0 +1,7 @@
+#!/usr/bin/env zsh
+# claude-guard command: status, add, remove. Run `claude-guard help`.
+# A separate executable, not a shell function, so it also works in the Bash tool
+# of Claude Code (and with the ! prefix), where only PATH and exported variables survive.
+emulate zsh
+source "${0:A:h:h}/claude-guard.plugin.zsh"
+_claude_guard_cli "$@"
