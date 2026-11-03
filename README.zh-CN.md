@@ -77,6 +77,18 @@ curl -s https://claude.ai/cdn-cgi/trace | grep ^ip=
 
 `claude -h`、`--help`、`-v`、`--version` 不联网，跳过检查。
 
+## 不启动 claude，只看检查结果
+
+```
+$ claude-guard status
+出口 IP   192.0.2.9（0.4 秒，https://claude.ai/cdn-cgi/trace）
+白名单    ~/.config/claude-guard/allowed-ips（1 条：203.0.113.7）
+代理      https_proxy=http://127.0.0.1:7890
+结果      不在白名单：启动 claude 时会询问
+```
+
+退出码：在白名单为 0，不在为 1，无法访问 claude.ai 为 2，脚本里也能用。代理地址里的用户名和密码显示为 `***`。
+
 ## 跳过检查
 
 ```sh
@@ -85,6 +97,19 @@ command claude ...               # 直接调用真正的 claude
 ```
 
 在 Claude Code 会话里，Bash 工具会重放你的 shell 函数，但不带 claude-guard 的辅助函数。这种情况下包装函数直接放行，因为父会话启动时已经通过了检查。
+
+## 不受检查的情况
+
+claude-guard 只在交互式 zsh 里包装 `claude`。用下面这些方式启动 Claude Code 时，不经过检查：
+
+- IDE 扩展和桌面 App 自己启动 claude 程序，而不是在终端里输入 `claude`
+- 脚本、cron 和 `ssh host 'claude ...'`（没有交互式 zsh）
+- bash、fish 等其他 shell
+- `command claude` 和 `CLAUDE_GUARD_SKIP=1`，它们按设计跳过检查
+
+这些情况下，先运行 `claude-guard status`，看 claude.ai 将会看到的 IP。
+
+检查只在启动时运行一次。会话进行中代理变了，claude-guard 发现不了。
 
 ## 设置项
 

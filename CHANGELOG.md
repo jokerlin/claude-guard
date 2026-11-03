@@ -6,11 +6,14 @@ All notable changes to claude-guard. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `claude-guard status` shows the egress IP, the allowlist, the proxy variable and the result without starting claude. Exit status 0 allowed, 1 not allowed, 2 claude.ai not reachable.
+- README section "What is not checked": IDE extensions and desktop apps that start claude themselves, scripts, other shells, and proxy changes during a session.
 - Demo GIFs in both READMEs, recorded from `docs/demo/demo.tape`.
 
 ### Changed
 
 - Messages show the allowlist path with `~` for the home directory.
+- A user name and password in the proxy URL are shown as `***`. The "cannot reach" message shows `HTTPS_PROXY` or `all_proxy` when `https_proxy` is not set.
 
 ## [1.0.0] - 2026-11-03
 

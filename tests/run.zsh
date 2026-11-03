@@ -108,6 +108,39 @@ FAKE_IP=192.0.2.9 run "Chinese messages for zh locale" 1 "*不在白名单*" 'LA
 FAKE_IP=192.0.2.9 run "CLAUDE_GUARD_LANG overrides the locale" 1 "*not in the allowlist*" \
   'LANG=zh_CN.UTF-8 CLAUDE_GUARD_LANG=en claude'
 
+# --- claude-guard status
+reset_state
+printf '203.0.113.7\n198.51.100.1 # vps\n' > "$WORK/allow"
+FAKE_IP=203.0.113.7 run "status: allowed, exit 0" 0 \
+  "egress IP   203.0.113.7  \(*\)*allowlist   */allow  \(2 entries: 203.0.113.7 198.51.100.1\)*result      allowed:*" \
+  'claude-guard status'
+FAKE_IP=192.0.2.9 run "status: not allowed, exit 1" 1 "*egress IP   192.0.2.9*result      not allowed:*" \
+  'claude-guard status'
+FAKE_IP= run "status: unreachable, exit 2" 2 "egress IP   none  \(cannot reach *result      claude.ai not reachable:*" \
+  'claude-guard status'
+FAKE_IP=203.0.113.7 run "status: one entry is singular" 0 "*\\(1 entry: 203.0.113.7\\)*" \
+  "print 203.0.113.7 > '$WORK/one'; CLAUDE_GUARD_ALLOWLIST='$WORK/one' claude-guard status"
+FAKE_IP=203.0.113.7 run "status: empty allowlist file" 1 "*\\(0 entries\\)*" \
+  ": > '$WORK/empty'; CLAUDE_GUARD_ALLOWLIST='$WORK/empty' claude-guard status"
+FAKE_IP=203.0.113.7 run "status: missing allowlist file" 1 "*\(file not found\)*not allowed*" \
+  "CLAUDE_GUARD_ALLOWLIST='$WORK/nope' claude-guard status"
+FAKE_IP=203.0.113.7 run "status: no proxy variable" 0 "*proxy       no proxy variable set*" \
+  'claude-guard status'
+FAKE_IP=203.0.113.7 run "status: proxy password is hidden" 0 "*proxy       https_proxy=http://\*\*\*@127.0.0.1:7890*" \
+  'out=$(https_proxy=http://user:secret@127.0.0.1:7890 claude-guard status); [[ $out != *secret* ]] && print -r -- $out'
+FAKE_IP=203.0.113.7 run "status: HTTPS_PROXY used when https_proxy is unset" 0 "*proxy       HTTPS_PROXY=http://127.0.0.1:1*" \
+  'HTTPS_PROXY=http://127.0.0.1:1 claude-guard status'
+FAKE_IP=203.0.113.7 run "status: note when CLAUDE_GUARD_SKIP is set" 0 "*note        CLAUDE_GUARD_SKIP is set*" \
+  'CLAUDE_GUARD_SKIP=1 claude-guard status'
+FAKE_IP=203.0.113.7 run "status: Chinese output" 0 "出口 IP   203.0.113.7*结果      在白名单*" \
+  'CLAUDE_GUARD_LANG=zh claude-guard status'
+FAKE_IP= run "check: proxy password is hidden" 1 "*http://\*\*\*@127.0.0.1:7890*" \
+  'out=$(https_proxy=http://user:secret@127.0.0.1:7890 claude 2>&1); rc=$?; [[ $out != *secret* ]] && print -r -- $out; return $rc'
+run "claude-guard without arguments shows usage" 0 "usage: claude-guard status*" 'claude-guard'
+run "claude-guard unknown subcommand: exit 2" 2 "usage: claude-guard status*" 'claude-guard bogus'
+run "claude-guard in a function snapshot: exit 2" 2 "*helper functions are not loaded*" \
+  'unfunction -m "_claude_guard_*"; claude-guard status'
+
 print -r -- "---"
 print -r -- "$pass passed, $fail failed"
 (( fail == 0 ))
