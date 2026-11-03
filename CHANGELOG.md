@@ -4,6 +4,8 @@ All notable changes to claude-guard. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-03
+
 ### Added
 
 - `claude-guard add [IP]` adds an IP to the allowlist with the date as a comment; without IP, it adds the current egress IP. `claude-guard remove IP` removes one and keeps the other lines and comments.
@@ -47,6 +49,7 @@ First public release.
 - English and Chinese messages, chosen from the locale.
 - Loads as a plugin in Oh My Zsh, zinit and antidote (`claude-guard.plugin.zsh`).
 
-[Unreleased]: https://github.com/jokerlin/claude-guard/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jokerlin/claude-guard/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jokerlin/claude-guard/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jokerlin/claude-guard/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jokerlin/claude-guard/releases/tag/v1.0.0
