@@ -1,0 +1,17 @@
+{
+  "description": "claude-guard: check the egress IP before each prompt",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "zsh \"${CLAUDE_PLUGIN_ROOT}/claude-guard-hook.zsh\"",
+            "timeout": 15,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}

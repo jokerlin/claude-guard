@@ -66,14 +66,36 @@ Decisions:
 - **Cache only passes.** `${XDG_CACHE_HOME:-~/.cache}/claude-guard/last-ok` holds `<epoch> <ip> <cksum of proxy variables>`. The wrapper writes it too, so the first prompt after launch needs no request. The checksum keeps a session with other proxy variables from reusing it, without writing a proxy password to disk. The IP is checked against the allowlist again, so removing it takes effect at once.
 - **Fail closed.** If claude.ai cannot be reached, the prompt is blocked: claude would not get through that proxy either.
 - **"Start anyway" skips the hook.** `y` at launch starts claude with `CLAUDE_GUARD_SKIP=1`; otherwise the hook would block every prompt of that session.
-- **A pasteable fix.** The block message ends with `echo <ip> >> <allowlist>`, which works with the `!` prefix in Claude Code. `claude-guard status` does not work there, because the Bash tool drops the helper functions.
+- **A pasteable fix.** The block message ends with `claude-guard add <ip>`, to run with the `!` prefix in Claude Code. It shows the bare name when the user's own `PATH` (before the plugin changed it) finds this copy, or when the hook runs from the Claude Code plugin, whose `bin/` is on the `PATH` of the Bash tool. Otherwise it shows the full path.
 - **Exit 2 instead of JSON.** stderr becomes the block message, so no JSON escaping is needed.
 
 Limits: requests within a turn (between tool calls), background requests and the requests at session start do not pass through the hook.
 
+## The claude-guard command
+
+`claude-guard` (`status`, `add`, `remove`) is a program in `bin/` that sources the plugin, not a shell function. The Bash tool of Claude Code keeps `PATH` and exported variables but drops functions whose names start with `_`, so a function would fail there. The zsh plugin appends `bin/` to `PATH`; the Claude Code plugin gets `bin/` on the `PATH` of the Bash tool from Claude Code.
+
+- `add` without an IP adds the egress IP and writes the cache, so the next prompt passes without a request. With an IP, it checks the format (IPv4 with parts 0-255, or IPv6) and lowercases it.
+- `add` writes `<ip>    # added YYYY-MM-DD`, and starts a new line first when the file does not end with one.
+- `remove` needs an explicit IP and deletes only the lines whose entry is that IP. It writes a temporary file and renames it.
+- The `a` answer at launch uses the same code as `add`.
+
+## Claude Code plugin
+
+The repository is also a Claude Code plugin and its own marketplace:
+
+- `.claude-plugin/plugin.json`: the plugin `egress-claude-guard`. `claude plugin validate` rejects names that start with `claude-`, and warns that a name with `claude` in it reads as one of Anthropic's own.
+- `.claude-plugin/marketplace.json`: the marketplace `jokerlin`, with one entry whose source is `./`.
+- `hooks/hooks.json`: the `UserPromptSubmit` hook, `zsh "${CLAUDE_PLUGIN_ROOT}/claude-guard-hook.zsh"`, timeout 15, `onFailure: block`.
+- `bin/claude-guard`: on the `PATH` of the Bash tool while the plugin is enabled.
+
+The plugin cannot change the user's shell, so the launch check still needs the zsh plugin. The release workflow refuses a tag whose version differs from `plugin.json`.
+
+Seen in Claude Code 2.1.317: a line that starts with `!` runs the command, and Claude then answers its output without a `UserPromptSubmit` event, so the prompt hook does not check that model call.
+
 ## Claude Code function snapshots
 
-When Claude Code runs its Bash tool, it replays a snapshot of the user's shell functions. The snapshot keeps `claude()` but drops functions whose names start with `_`. Without its helpers, the wrapper would fail with "command not found". The wrapper checks for `_claude_guard_check` and lets the call through when it is missing: the parent session passed the check when it started.
+When Claude Code runs its Bash tool, it replays a snapshot of the user's shell functions. The snapshot keeps `claude()` but drops functions whose names start with `_`. Without its helpers, the wrapper would fail with "command not found". The wrapper checks for `_claude_guard_check` and lets the call through when it is missing: the parent session passed the check when it started. The `claude-guard` command is not affected, because it is a separate program.
 
 ## Scope
 

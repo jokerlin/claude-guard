@@ -46,14 +46,14 @@ The demo runs in `zsh -f` with fake `curl` and `claude` and example IPs (see `do
 
 Users install from `main`; a release marks a version and lists its changes.
 
-1. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new heading `## [X.Y.Z] - YYYY-MM-DD`, update the links at the bottom, and merge that through a pull request.
+1. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new heading `## [X.Y.Z] - YYYY-MM-DD`, update the links at the bottom, set `"version": "X.Y.Z"` in `.claude-plugin/plugin.json`, and merge that through a pull request.
 2. Tag the merge commit on `main` and push the tag:
 
    ```sh
    git tag -a vX.Y.Z -m "claude-guard X.Y.Z" && git push origin vX.Y.Z
    ```
 
-The `Release` workflow then runs the tests and publishes a GitHub release with the `[X.Y.Z]` section of `CHANGELOG.md` plus a compare link to the previous tag. It stops without a release when the tests fail or the section is missing.
+The `Release` workflow then runs the tests and publishes a GitHub release with the `[X.Y.Z]` section of `CHANGELOG.md` plus a compare link to the previous tag. It stops without a release when the tests fail, the section is missing, or the version in `plugin.json` is not `X.Y.Z`.
 
 To check the notes first, run the workflow by hand: **Actions → Release → Run workflow** with the version (or `gh workflow run release.yml -f version=X.Y.Z`). This dry run creates no release. `sh scripts/release-notes.sh X.Y.Z` prints the same section locally.
 
@@ -105,13 +105,13 @@ DEMO_LANG=zh vhs docs/demo/demo.tape -o docs/demo.zh-CN.gif
 
 用户直接从 `main` 安装；Release 用来标记版本、列出改动。
 
-1. 把 `CHANGELOG.md` 里 `[Unreleased]` 的条目移到新标题 `## [X.Y.Z] - YYYY-MM-DD` 下，更新底部链接，通过 PR 合入。
+1. 把 `CHANGELOG.md` 里 `[Unreleased]` 的条目移到新标题 `## [X.Y.Z] - YYYY-MM-DD` 下，更新底部链接，把 `.claude-plugin/plugin.json` 里的 `"version"` 改成 `X.Y.Z`，通过 PR 合入。
 2. 在 `main` 的合并提交上打 tag 并推送：
 
    ```sh
    git tag -a vX.Y.Z -m "claude-guard X.Y.Z" && git push origin vX.Y.Z
    ```
 
-之后 `Release` 工作流会跑测试，并用 `CHANGELOG.md` 里 `[X.Y.Z]` 那一段加上和上一个 tag 的对比链接，发布 GitHub Release。测试失败或找不到这一段时，工作流中止，不发 Release。
+之后 `Release` 工作流会跑测试，并用 `CHANGELOG.md` 里 `[X.Y.Z]` 那一段加上和上一个 tag 的对比链接，发布 GitHub Release。测试失败、找不到这一段，或 `plugin.json` 的版本不是 `X.Y.Z` 时，工作流中止，不发 Release。
 
 想先看 notes，手动运行工作流：**Actions → Release → Run workflow**，填入版本号（或 `gh workflow run release.yml -f version=X.Y.Z`）。这是 dry run，不会创建 Release。本地运行 `sh scripts/release-notes.sh X.Y.Z` 也能看到同一段内容。

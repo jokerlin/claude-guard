@@ -28,7 +28,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zsh
       - name: Tests
         run: |
-          zsh -n claude-guard.plugin.zsh && zsh -n claude-guard-hook.zsh && zsh -n tests/run.zsh
+          zsh -n claude-guard.plugin.zsh && zsh -n claude-guard-hook.zsh && zsh -n bin/claude-guard && zsh -n tests/run.zsh
           zsh tests/run.zsh </dev/null
       - name: Version
         id: version
@@ -41,6 +41,15 @@ jobs:
             *) echo "::error::not a version: $v"; exit 1 ;;
           esac
           echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Plugin version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          v=$(jq -r .version .claude-plugin/plugin.json)
+          if [ "$v" != "$VERSION" ]; then
+            echo "::error::.claude-plugin/plugin.json has version $v, but the release is $VERSION. Update it first."
+            exit 1
+          fi
       - name: Release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
